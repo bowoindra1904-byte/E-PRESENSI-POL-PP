@@ -6,6 +6,7 @@ export interface Employee {
   pangkat: string;
   deviceId: string | null;
   shiftPreference: 'harian' | 'shift';
+  regu?: 'Regu 1' | 'Regu 2' | 'Regu 3' | 'Regu 4' | 'Harian';
   isVipCardActive: boolean;
   photoSeed: string; // for unique avatar generation
   assignedSlotId?: number | 'ALL';

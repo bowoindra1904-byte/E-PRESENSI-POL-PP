@@ -309,6 +309,23 @@ export default function App() {
     ? (employees.find(e => e.nip === currentUser.nip) || currentUser) 
     : null;
 
+  // Reactively locks the workSystemType to correct profile shifts for regular apparatus
+  useEffect(() => {
+    if (activeEmployeeProfile && currentUser && currentUser.nip !== '198503252010121001') {
+      if (activeEmployeeProfile.shiftPreference === 'harian') {
+        setWorkSystemType('harian');
+      } else {
+        // Automatically determine shift_pagi (08:00 - 20:00) vs shift_malam (20:00 - 08:00)
+        const hr = currentTime.getHours();
+        if (hr >= 8 && hr < 20) {
+          setWorkSystemType('shift_pagi');
+        } else {
+          setWorkSystemType('shift_malam');
+        }
+      }
+    }
+  }, [activeEmployeeProfile?.shiftPreference, Math.floor(currentTime.getHours() / 12), currentUser?.nip]);
+
   const dayOfWeek = currentTime.getDay();
   const currentHour = currentTime.getHours();
   const currentMinute = currentTime.getMinutes();
@@ -362,11 +379,50 @@ export default function App() {
     jabatan: '', 
     pangkat: '', 
     shiftPreference: 'harian' as 'harian' | 'shift',
+    regu: 'Harian' as 'Regu 1' | 'Regu 2' | 'Regu 3' | 'Regu 4' | 'Harian',
     assignedSlotId: 'ALL' as number | 'ALL'
   });
   
   const [isEditingSlot, setIsEditingSlot] = useState<LocationSlot | null>(null);
   const [slotForm, setSlotForm] = useState({ name: '', latitude: 0, longitude: 0, radius: 100 });
+
+  // --- Signatory Approvers State ---
+  const [signatoryName, setSignatoryName] = useState(() => {
+    return localStorage.getItem('polpp_signatory_name') || 'BENI SASTRA, S.IP';
+  });
+  const [signatoryRole, setSignatoryRole] = useState(() => {
+    return localStorage.getItem('polpp_signatory_role') || 'Kepala Satuan Polisi Pamong Praja';
+  });
+  const [signatoryNip, setSignatoryNip] = useState(() => {
+    return localStorage.getItem('polpp_signatory_nip') || '198503252010121001';
+  });
+  const [signatoryTitle, setSignatoryTitle] = useState(() => {
+    return localStorage.getItem('polpp_signatory_title') || 'Kabupaten Bangka Barat';
+  });
+  const [isSignatoryEnabled, setIsSignatoryEnabled] = useState(() => {
+    return localStorage.getItem('polpp_signatory_enabled') !== 'false';
+  });
+
+  // Keep signatory parameters synchronized in storage
+  useEffect(() => {
+    localStorage.setItem('polpp_signatory_name', signatoryName);
+  }, [signatoryName]);
+
+  useEffect(() => {
+    localStorage.setItem('polpp_signatory_role', signatoryRole);
+  }, [signatoryRole]);
+
+  useEffect(() => {
+    localStorage.setItem('polpp_signatory_nip', signatoryNip);
+  }, [signatoryNip]);
+
+  useEffect(() => {
+    localStorage.setItem('polpp_signatory_title', signatoryTitle);
+  }, [signatoryTitle]);
+
+  useEffect(() => {
+    localStorage.setItem('polpp_signatory_enabled', isSignatoryEnabled ? 'true' : 'false');
+  }, [isSignatoryEnabled]);
 
   // --- Leave Form States ---
   const [applyLeaveType, setApplyLeaveType] = useState<'Sakit' | 'Cuti' | 'Tugas Luar' | 'Izin Lainnya'>('Sakit');
@@ -513,6 +569,48 @@ export default function App() {
   };
 
   // --- Auth Managers ---
+  const handleAdminBypass = () => {
+    setLoginError('');
+    const adminNip = '198503252010121001';
+    let matched = employees.find(emp => {
+      const cleanEmpNip = emp.nip.replace(/\D/g, '').trim();
+      return cleanEmpNip === adminNip;
+    });
+
+    if (!matched) {
+      matched = {
+        id: 'emp-admin',
+        nip: adminNip,
+        nama: 'KASAT BENI',
+        jabatan: 'KASAT POL PP (KASAT)',
+        pangkat: 'Pembina Utama Muda (IV/c)',
+        shiftPreference: 'harian',
+        deviceId: 'ADMIN_BYPASS_DEV_UUID',
+        assignedSlotId: 'ALL'
+      };
+      setEmployees(prev => [matched!, ...prev]);
+    }
+
+    let finalEmployee = { ...matched };
+    if (!matched.deviceId) {
+      const virtualUuid = 'ADMIN_BYPASS_DEV_UUID';
+      finalEmployee.deviceId = virtualUuid;
+      setEmployees(prev => prev.map(e => {
+        const cleanE = e.nip.replace(/\D/g, '').trim();
+        return cleanE === adminNip ? { ...e, deviceId: virtualUuid } : e;
+      }));
+    }
+
+    setCurrentUser(finalEmployee);
+    setCurrentView('dashboard');
+    addSecurityLog(
+      adminNip, 
+      'USER_AUTHENTICATION_OK', 
+      'SECURE', 
+      `Aparatur ${finalEmployee.nama} masuk secara cepat tanpa menggunakan sandi via bypass admin.`
+    );
+  };
+
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError('');
@@ -801,6 +899,7 @@ export default function App() {
         jabatan: empForm.jabatan, 
         pangkat: empForm.pangkat,
         shiftPreference: empForm.shiftPreference,
+        regu: empForm.regu,
         assignedSlotId: empForm.assignedSlotId
       } : e));
       
@@ -822,6 +921,7 @@ export default function App() {
         pangkat: empForm.pangkat || 'Pengatur Muda (II/a)',
         deviceId: null,
         shiftPreference: empForm.shiftPreference,
+        regu: empForm.regu,
         isVipCardActive: true,
         photoSeed: Math.random().toString(),
         assignedSlotId: empForm.assignedSlotId
@@ -831,7 +931,7 @@ export default function App() {
       addSecurityLog('ADMIN', 'EMPLOYEE_CREATE', 'SECURE', `Menambahkan anggota baru NIP: ${cleanNip}`);
     }
 
-    setEmpForm({ nip: '', nama: '', jabatan: '', pangkat: '', shiftPreference: 'harian', assignedSlotId: 'ALL' });
+    setEmpForm({ nip: '', nama: '', jabatan: '', pangkat: '', shiftPreference: 'harian', regu: 'Harian', assignedSlotId: 'ALL' });
   };
 
   const startEditEmployee = (emp: Employee) => {
@@ -842,6 +942,7 @@ export default function App() {
       jabatan: emp.jabatan,
       pangkat: emp.pangkat,
       shiftPreference: emp.shiftPreference,
+      regu: emp.regu || 'Harian',
       assignedSlotId: emp.assignedSlotId || 'ALL'
     });
   };
@@ -1480,29 +1581,20 @@ export default function App() {
                   OTORISASI LOGIN & BIND PERANGKAT
                 </button>
 
-                {/* Quick login bypass for seamless developers and evaluators assessment */}
-                <div className="border-t border-zinc-800/80 pt-4 mt-4 text-center">
-                  <span className="text-[9px] font-mono tracking-widest text-zinc-400 block uppercase mb-2">QUICK ACCESS DEMO ROLES (1-CLICK)</span>
-                  <div className="grid grid-cols-2 gap-2">
+                {loginNip.replace(/\D/g, '') === '198503252010121001' && (
+                  <div className="pt-2 animate-fade-in">
                     <button
                       type="button"
-                      onClick={() => { setLoginNip('198503252010121001'); setLoginPassword('Polpp01'); }}
-                      className="px-2 py-1.5 bg-tactical-light/30 hover:bg-tactical-light/50 border border-gold-accent/40 rounded text-[9.5px] font-sans font-bold text-gold-accent transition-all uppercase cursor-pointer text-center"
+                      onClick={handleAdminBypass}
+                      className="w-full py-2.5 bg-red-950/40 hover:bg-red-900/50 border border-red-800/40 text-red-400 font-display font-bold text-xs uppercase tracking-widest rounded-lg transition-all shadow hover:border-gold-accent/50 hover:text-white cursor-pointer flex items-center justify-center gap-2"
                     >
-                      👑 KASAT BENI (ADMIN)
+                      👑 BYPASS KHUSUS: MASUK ADMIN LANGSUNG
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => { setLoginNip('199004122013021015'); setLoginPassword('Polpp01'); }}
-                      className="px-2 py-1.5 bg-tactical-light/30 hover:bg-tactical-light/50 border border-gold-accent/40 rounded text-[9.5px] font-sans font-bold text-gold-accent transition-all uppercase cursor-pointer text-center"
-                    >
-                      🛡️ ANGGOTA DANU (PEGAWAI)
-                    </button>
+                    <p className="text-[9px] text-zinc-500 mt-1 italic text-center">
+                      Otorisasi bypass terdeteksi untuk Kasat/Admin. Ketuk untuk masuk tanpa sandi.
+                    </p>
                   </div>
-                  <p className="text-[8px] text-zinc-500 mt-2 italic">
-                    💡 Klik salah satu tombol di atas untuk memasukkan kredensial otomatis, lalu klik tombol kuning besar untuk masuk.
-                  </p>
-                </div>
+                )}
               </form>
             </div>
           )}
@@ -1634,16 +1726,38 @@ export default function App() {
 
                     {/* Step C: Check active Jam Kerja System */}
                     <div className="space-y-2">
-                      <label className="text-[9.5px] font-mono font-bold tracking-widest text-zinc-400 block uppercase">
-                        3. Sistem Jam Kerja Pengamanan
-                      </label>
+                      <div className="flex items-center justify-between">
+                        <label className="text-[9.5px] font-mono font-bold tracking-widest text-zinc-400 block uppercase">
+                          3. Sistem Jam Kerja Pengamanan
+                        </label>
+                        {currentUser && currentUser.nip !== '198503252010121001' && (
+                          <span className="text-[8px] bg-red-950/60 text-red-400 border border-red-900/30 font-bold px-1.5 py-0.2 rounded flex items-center gap-1">
+                            🔒 KASAT LOCKED
+                          </span>
+                        )}
+                      </div>
+
+                      {currentUser && currentUser.nip !== '198503252010121001' && (
+                        <div className="bg-amber-950/25 border border-amber-900/40 p-2 rounded-lg text-[9px] text-amber-400 font-sans leading-relaxed">
+                          Sistem jam kerja Anda telah ditetapkan secara permanen oleh Admin ke sistem <span className="underline font-bold">{activeEmployeeProfile?.shiftPreference === 'shift' ? 'SHIFT BERGILIR' : 'KANTOR HARIAN'}</span>. Tombol berikut terkunci.
+                        </div>
+                      )}
+
                       <div className="flex flex-col space-y-1.5">
                         <button
                           type="button"
-                          onClick={() => setWorkSystemType('harian')}
-                          className={`w-full py-2.5 px-3 rounded-lg border text-left transition-all relative cursor-pointer ${
+                          onClick={() => {
+                            if (currentUser?.nip === '198503252010121001') {
+                              setWorkSystemType('harian');
+                            } else {
+                              alert('⚠️ AKSES DITOLAK: Jam kerja Anda dikunci oleh Mako sesuai jadwal pelayanan terdaftar.');
+                            }
+                          }}
+                          className={`w-full py-2.5 px-3 rounded-lg border text-left transition-all relative ${
+                            currentUser?.nip !== '198503252010121001' && workSystemType !== 'harian' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                          } ${
                             workSystemType === 'harian'
-                              ? 'bg-tactical-light/40 border-gold-accent text-white'
+                              ? 'bg-tactical-light/40 border-gold-accent text-white font-bold'
                               : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
                           }`}
                         >
@@ -1658,10 +1772,18 @@ export default function App() {
 
                         <button
                           type="button"
-                          onClick={() => setWorkSystemType('shift_pagi')}
-                          className={`w-full py-2.5 px-3 rounded-lg border text-left transition-all relative cursor-pointer ${
+                          onClick={() => {
+                            if (currentUser?.nip === '198503252010121001') {
+                              setWorkSystemType('shift_pagi');
+                            } else {
+                              alert('⚠️ AKSES DITOLAK: Jam kerja Anda dikunci oleh Mako sesuai jadwal pelayanan terdaftar.');
+                            }
+                          }}
+                          className={`w-full py-2.5 px-3 rounded-lg border text-left transition-all relative ${
+                            currentUser?.nip !== '198503252010121001' && workSystemType !== 'shift_pagi' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                          } ${
                             workSystemType === 'shift_pagi'
-                              ? 'bg-tactical-light/40 border-gold-accent text-white'
+                              ? 'bg-tactical-light/40 border-gold-accent text-white font-bold'
                               : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
                           }`}
                         >
@@ -1676,10 +1798,18 @@ export default function App() {
 
                         <button
                           type="button"
-                          onClick={() => setWorkSystemType('shift_malam')}
-                          className={`w-full py-2.5 px-3 rounded-lg border text-left transition-all relative cursor-pointer ${
+                          onClick={() => {
+                            if (currentUser?.nip === '198503252010121001') {
+                              setWorkSystemType('shift_malam');
+                            } else {
+                              alert('⚠️ AKSES DITOLAK: Jam kerja Anda dikunci oleh Mako sesuai jadwal pelayanan terdaftar.');
+                            }
+                          }}
+                          className={`w-full py-2.5 px-3 rounded-lg border text-left transition-all relative ${
+                            currentUser?.nip !== '198503252010121001' && workSystemType !== 'shift_malam' ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'
+                          } ${
                             workSystemType === 'shift_malam'
-                              ? 'bg-tactical-light/40 border-gold-accent text-white'
+                              ? 'bg-tactical-light/40 border-gold-accent text-white font-bold'
                               : 'bg-zinc-900/60 border-zinc-800 text-zinc-400 hover:bg-zinc-900'
                           }`}
                         >
@@ -2025,6 +2155,101 @@ export default function App() {
                 </p>
               </div>
 
+              {/* EDIT SIGNATORY MODULE (ONLY DISPLAYED TO ADMIN, no-print) */}
+              {currentUser?.nip === '198503252010121001' && (
+                <div className="bg-zinc-950 border border-zinc-800 rounded-xl p-5 shadow-lg space-y-4 no-print">
+                  <h4 className="text-xs uppercase font-display font-black text-gold-accent tracking-wider flex items-center gap-1.5 border-b border-zinc-900 pb-2">
+                    🖋️ PENGATURAN PENANDA TANGAN DOKUMEN (KASAT / PLT / ADMIN)
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono tracking-widest text-[#9d9d9f] block uppercase font-bold">Nama Penanda Tangan</label>
+                      <input
+                        type="text"
+                        value={signatoryName}
+                        onChange={(e) => setSignatoryName(e.target.value)}
+                        placeholder="Yanto, S.AN..."
+                        className="w-full bg-tactical-dark border border-zinc-700 focus:border-gold-accent rounded-lg p-2 text-xs text-white uppercase focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono tracking-widest text-[#9d9d9f] block uppercase font-bold">Jabatan / Peran</label>
+                      <input
+                        type="text"
+                        value={signatoryRole}
+                        onChange={(e) => setSignatoryRole(e.target.value)}
+                        placeholder="Plt. Kepala Satuan Polisi Pamong Praja..."
+                        className="w-full bg-tactical-dark border border-zinc-700 focus:border-gold-accent rounded-lg p-2 text-xs text-white focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono tracking-widest text-[#9d9d9f] block uppercase font-bold">NIP Penanggung Jawab</label>
+                      <input
+                        type="text"
+                        value={signatoryNip}
+                        onChange={(e) => setSignatoryNip(e.target.value.replace(/[^0-9]/g, ''))}
+                        placeholder="1987..."
+                        className="w-full bg-tactical-dark border border-zinc-700 focus:border-gold-accent rounded-lg p-2 text-xs text-white font-mono focus:outline-none"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-mono tracking-widest text-[#9d9d9f] block uppercase font-bold">Pangkat / Instansi</label>
+                      <input
+                        type="text"
+                        value={signatoryTitle}
+                        onChange={(e) => setSignatoryTitle(e.target.value)}
+                        placeholder="Kabupaten Bangka Barat..."
+                        className="w-full bg-tactical-dark border border-zinc-700 focus:border-gold-accent rounded-lg p-2 text-xs text-white focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center text-xs gap-3 pt-2 border-t border-zinc-900 border-dashed">
+                    <div className="flex items-center space-x-2">
+                      <input 
+                        type="checkbox" 
+                        id="toggleSignatory"
+                        checked={isSignatoryEnabled}
+                        onChange={(e) => setIsSignatoryEnabled(e.target.checked)}
+                        className="w-4 h-4 accent-gold-accent cursor-pointer rounded"
+                      />
+                      <label htmlFor="toggleSignatory" className="text-[11px] font-sans text-zinc-300 font-medium cursor-pointer">
+                        Tampilkan Blok Tanda Tangan Kasat pada Cetakan Kertas
+                      </label>
+                    </div>
+                    <div className="flex space-x-2 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSignatoryName('');
+                          setSignatoryRole('');
+                          setSignatoryNip('');
+                          setSignatoryTitle('');
+                          setIsSignatoryEnabled(false);
+                          alert('✓ Seluruh data Penanda Tangan telah ditiadakan (kosong)!');
+                        }}
+                        className="p-1.5 px-3 bg-red-950/40 text-red-500 hover:bg-red-950/60 border border-red-900/40 text-[10px] font-semibold tracking-wider uppercase rounded cursor-pointer transition-all active:scale-95"
+                      >
+                        Hapus Semua Kolom
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSignatoryName('BENI SASTRA, S.IP');
+                          setSignatoryRole('Kepala Satuan Polisi Pamong Praja');
+                          setSignatoryNip('198503252010121001');
+                          setSignatoryTitle('Kabupaten Bangka Barat');
+                          setIsSignatoryEnabled(true);
+                          alert('✓ Informasi Penanda Tangan di-reset ke default Kasat Beni Sastra.');
+                        }}
+                        className="p-1.5 px-3 bg-zinc-900 text-zinc-300 hover:bg-zinc-800 border border-zinc-800 text-[10px] font-semibold tracking-wider uppercase rounded cursor-pointer transition-all active:scale-95"
+                      >
+                        Reset Default
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Dynamic Interactive Analytics Report Charts (Screen-only, no-print) */}
               <div className="no-print">
                 <MonthlyReportCharts
@@ -2057,96 +2282,154 @@ export default function App() {
                 {/* Table Sheet body */}
                 <div className="overflow-x-auto mt-4">
                   <table className="w-full text-left text-[11px] text-zinc-800 font-sans border border-zinc-400 border-collapse">
-                    <thead className="bg-zinc-100 text-black font-bold uppercase tracking-wider border-b border-zinc-400 text-[10px]">
+                    <thead className="bg-[#2a4d36]/10 text-zinc-900 font-bold uppercase tracking-wider border-b border-zinc-400 text-[10px]/tight">
                       <tr>
-                        <th className="py-2 px-2 border-r border-b border-zinc-400">Pegawai / NIP</th>
-                        <th className="py-2 px-2 border-r border-b border-zinc-400">Jabatan & Pangkat</th>
-                        <th className="py-2 px-2 border-r border-b border-zinc-400">Hari / Tgl Kerja</th>
-                        <th className="py-2 px-2 border-r border-b border-zinc-400">Tipe Log</th>
-                        <th className="py-2 px-2 border-r border-b border-zinc-400">Spot Absen Terpilih</th>
-                        <th className="py-2 px-2 border-r border-b border-zinc-400 text-right">Deviasi GPS</th>
-                        <th className="py-2 px-2 border-r border-b border-zinc-400">Keterangan Jam</th>
-                        <th className="py-2 px-2 border-b border-zinc-400 text-center">Blok Kode Hash</th>
+                        <th className="py-2.5 px-2 border-r border-b border-zinc-400 text-center w-6 bg-zinc-50">No</th>
+                        <th className="py-2.5 px-3 border-r border-b border-zinc-400">Pegawai / Personil Mako</th>
+                        <th className="py-2.5 px-3 border-r border-b border-zinc-400 text-center">Regu / Unit</th>
+                        <th className="py-2.5 px-3 border-r border-b border-zinc-400 text-center">Kehadiran (Masuk)</th>
+                        <th className="py-2.5 px-3 border-r border-b border-zinc-400 text-center text-emerald-800">Tepat Waktu</th>
+                        <th className="py-2.5 px-3 border-r border-b border-zinc-400 text-center text-rose-800">Terlambat</th>
+                        <th className="py-2.5 px-3 border-r border-b border-zinc-400 text-center text-amber-700">Dinas Cuti/Izin</th>
+                        <th className="py-2.5 px-3 border-r border-b border-zinc-400 text-center">Deviasi GPS rata</th>
+                        <th className="py-2.5 px-3 border-b border-zinc-400 text-center bg-[#f9fafb]">Disiplin (%)</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-zinc-200">
-                      {filteredAttendance.length === 0 ? (
-                        <tr>
-                          <td colSpan={8} className="text-center py-6 text-zinc-500 font-sans italic">
-                            Tidak ditemukan riwayat log absensi tervalidasi pada periode bulan dan pegawai yang ditargetkan.
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredAttendance.map((rec, i) => (
-                          <tr key={rec.id} className="hover:bg-zinc-50 font-sans">
-                            <td className="py-2 px-2 border-r border-zinc-200">
-                              <span className="font-bold block text-black">{rec.nama}</span>
-                              <span className="text-[9.5px] text-zinc-600 font-mono">NIP.{rec.nip}</span>
-                            </td>
-                            <td className="py-2 px-2 border-r border-zinc-200">{rec.jabatan}</td>
-                            <td className="py-2 px-2 border-r border-zinc-200 font-mono text-[10px]">
-                              {new Date(rec.date).toLocaleDateString('id-ID', { weekday: 'short', day: '2-digit', month: '2-digit' })} • {rec.time}
-                            </td>
-                            <td className="py-2 px-2 border-r border-zinc-200">
-                              <span className={`px-1 py-0.2 rounded font-bold uppercase text-[9px] ${
-                                rec.type === 'Masuk' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-teal-50 text-teal-800 border border-teal-200'
-                              }`}>
-                                {rec.type}
-                              </span>
-                            </td>
-                            <td className="py-2 px-2 border-r border-zinc-200 truncate max-w-[120px]">{rec.locationName}</td>
-                            <td className="py-2 px-2 border-r border-zinc-200 text-right font-mono text-[10px]">{rec.distanceInMeters} meter</td>
-                            <td className={`py-2 px-2 border-r border-zinc-200 font-sans ${rec.isLate ? 'text-red-600 font-bold' : 'text-emerald-700'}`}>
-                              {rec.isLate ? '🚨 TERLAMBAT' : '✓ Tepat Waktu'} ({rec.workSystemName.split(' ')[0]})
-                            </td>
-                            <td className="py-2 px-2 text-center font-mono text-[9px] text-zinc-500">{rec.secureHash}</td>
-                          </tr>
-                        ))
-                      )}
+                    <tbody className="divide-y divide-zinc-350">
+                      {(() => {
+                        const targetAparats = rekapFilterNip === 'ALL' 
+                          ? employees 
+                          : employees.filter(e => e.nip === rekapFilterNip);
+
+                        if (targetAparats.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={9} className="text-center py-6 text-zinc-500 font-sans italic">
+                                Tidak ditemukan data personil untuk dibuatkan rekapitulasi.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return targetAparats.map((emp, idx) => {
+                          const empMonthLogs = attendance.filter(a => a.nip === emp.nip && a.date.startsWith(rekapMonth));
+                          const totalHadir = empMonthLogs.filter(a => a.type === 'Masuk').length;
+                          const tepatWaktu = empMonthLogs.filter(a => a.type === 'Masuk' && !a.isLate).length;
+                          const terlambat = empMonthLogs.filter(a => a.type === 'Masuk' && a.isLate).length;
+                          const docLeaves = leavePermits.filter(p => p.nip === emp.nip && p.status === 'Disetujui' && p.dateStart.startsWith(rekapMonth));
+                          const totalIzin = docLeaves.length;
+                          
+                          const avgDeviasi = empMonthLogs.length > 0
+                            ? Math.round(empMonthLogs.reduce((acc, c) => acc + c.distanceInMeters, 0) / empMonthLogs.length)
+                            : 0;
+
+                          const tingkatDisiplin = totalHadir > 0
+                            ? Math.round((tepatWaktu / totalHadir) * 100)
+                            : (totalIzin > 0 ? 100 : 0);
+
+                          return (
+                            <tr key={emp.id} className="hover:bg-zinc-50 font-sans">
+                              <td className="py-2 px-1 border-r border-zinc-300 text-center font-bold bg-zinc-50/50">{idx + 1}</td>
+                              <td className="py-2 px-2.5 border-r border-zinc-300">
+                                <span className="font-bold block text-black line-clamp-1">{emp.nama}</span>
+                                <span className="text-[9.5px] text-zinc-600 font-mono">NIP. {emp.nip}</span>
+                              </td>
+                              <td className="py-2 px-2.5 border-r border-zinc-300 text-center font-bold text-zinc-800">
+                                {emp.regu || 'Harian'}
+                              </td>
+                              <td className="py-2 px-2 border-r border-zinc-300 text-center font-semibold text-zinc-900">
+                                {totalHadir} Hari
+                              </td>
+                              <td className="py-2 px-2 border-r border-zinc-300 text-center font-bold text-emerald-700">
+                                {tepatWaktu}
+                              </td>
+                              <td className="py-2 px-2 border-r border-zinc-300 text-center font-bold text-rose-700">
+                                {terlambat}
+                              </td>
+                              <td className="py-2 px-2 border-r border-zinc-300 text-center text-amber-800 font-bold">
+                                {totalIzin} Hari
+                              </td>
+                              <td className="py-2 px-2 border-r border-zinc-300 text-center font-mono text-zinc-500">
+                                {avgDeviasi} meter
+                              </td>
+                              <td className="py-2 px-2 text-center font-extrabold text-[#0f1b14] bg-zinc-50/40 text-sm">
+                                {tingkatDisiplin}%
+                              </td>
+                            </tr>
+                          );
+                        });
+                      })()}
                     </tbody>
                   </table>
                 </div>
 
                 {/* Under table stats breakdown on papers */}
-                <div className="grid grid-cols-3 gap-4 border border-zinc-400 rounded p-3 text-xs bg-zinc-50/55 text-zinc-800 font-sans mt-4">
-                  <div>
-                    <span className="text-zinc-500 block">Total Log Tercetak:</span>
-                    <span className="font-bold text-black text-sm">{filteredAttendance.length} Entri Kehadiran</span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 block">Selisih GPS Rata-Rata:</span>
-                    <span className="font-bold text-black text-sm">
-                      {filteredAttendance.length > 0 
-                        ? Math.round(filteredAttendance.reduce((acc, c) => acc + c.distanceInMeters, 0) / filteredAttendance.length)
-                        : 0} meter
-                    </span>
-                  </div>
-                  <div>
-                    <span className="text-zinc-500 block">Status Validitas Keamanan:</span>
-                    <span className="font-bold text-emerald-700 text-sm flex items-center gap-1">
-                      🛡️ 100% MIL-STD-HASH VERIFIED
-                    </span>
-                  </div>
-                </div>
+                {(() => {
+                  const targetAparats = rekapFilterNip === 'ALL' 
+                    ? employees 
+                    : employees.filter(e => e.nip === rekapFilterNip);
+
+                  let sumHadir = 0;
+                  let sumTepat = 0;
+                  let sumLate = 0;
+                  let sumIzin = 0;
+                  let sumDisp = 0;
+
+                  targetAparats.forEach(emp => {
+                    const logs = attendance.filter(a => a.nip === emp.nip && a.date.startsWith(rekapMonth));
+                    sumHadir += logs.filter(a => a.type === 'Masuk').length;
+                    sumTepat += logs.filter(a => a.type === 'Masuk' && !a.isLate).length;
+                    sumLate += logs.filter(a => a.type === 'Masuk' && a.isLate).length;
+                    
+                    const docLeaves = leavePermits.filter(p => p.nip === emp.nip && p.status === 'Disetujui' && p.dateStart.startsWith(rekapMonth));
+                    sumIzin += docLeaves.length;
+
+                    const disp = logs.filter(a => a.type === 'Masuk').length > 0
+                      ? Math.round((logs.filter(a => a.type === 'Masuk' && !a.isLate).length / logs.filter(a => a.type === 'Masuk').length) * 100)
+                      : (docLeaves.length > 0 ? 100 : 0);
+                    sumDisp += disp;
+                  });
+
+                  const avgDispAll = targetAparats.length > 0 ? Math.round(sumDisp / targetAparats.length) : 0;
+
+                  return (
+                    <div className="grid grid-cols-3 gap-4 border border-zinc-400 rounded p-3 text-xs bg-zinc-50/55 text-zinc-800 font-sans mt-4">
+                      <div>
+                        <span className="text-zinc-500 block">Total Pegawai Terekap:</span>
+                        <span className="font-bold text-black text-sm">{targetAparats.length} Personil Satpol PP</span>
+                      </div>
+                      <div>
+                        <span className="text-zinc-500 block">Rata-Rata Tingkat Disiplin:</span>
+                        <span className="font-bold text-emerald-800 text-sm">{avgDispAll}% Kehadiran Tepat Waktu</span>
+                      </div>
+                      <div>
+                        <span className="text-zinc-500 block">Sakit / Cuti Terverifikasi:</span>
+                        <span className="font-bold text-amber-700 text-sm">{sumIzin} Hari Kerja Terbit Surat Izin</span>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Signature bottom areas representing standard Indonesian administrative archive approvals */}
-                <div className="pt-12 flex justify-between text-xs font-sans text-right px-6 mt-12">
-                  <div className="text-left w-1/2 font-sans space-y-1 text-zinc-600">
-                    <p className="font-bold text-zinc-700">Catatan Pemeriksa:</p>
-                    <p className="text-[10px]">Data dicetak secara otomatis dan dijamin orisinalitasnya oleh modul tanda tangan digital anti-manipulasi Satpol PP Bangka Barat.</p>
-                  </div>
-                  <div className="w-1/3 text-center space-y-16">
-                    <div>
-                      <p className="text-zinc-700 font-medium">Mentok, {new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: '2-digit' })}</p>
-                      <p className="font-bold text-zinc-900">Kepala Satuan Polisi Pamong Praja</p>
-                      <p className="text-zinc-500 text-[10px] uppercase font-mono tracking-tighter">Kabupaten Bangka Barat</p>
+                {isSignatoryEnabled && (signatoryName || signatoryRole || signatoryNip) && (
+                  <div className="pt-12 flex justify-between text-xs font-sans text-right px-6 mt-12 break-inside-avoid">
+                    <div className="text-left w-1/2 font-sans space-y-1 text-zinc-600">
+                      <p className="font-bold text-zinc-700">Catatan Pemeriksa:</p>
+                      <p className="text-[10px]">Data bulanan terekap secara digital dan tervalidasi oleh sistem GPS anti-tamper Satpol PP Kabupaten Bangka Barat.</p>
                     </div>
-                    <div>
-                      <p className="font-bold text-zinc-950 underline underline-offset-4">BENI SASTRA, S.IP</p>
-                      <p className="text-[10px] text-zinc-600 font-mono mt-0.5">NIP. 198503252010121001</p>
+                    <div className="w-1/3 text-center space-y-16">
+                      <div>
+                        <p className="text-zinc-700 font-medium">Mentok, {new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: '2-digit' })}</p>
+                        {signatoryRole && <p className="font-bold text-zinc-900 leading-normal">{signatoryRole}</p>}
+                        {signatoryTitle && <p className="text-zinc-500 text-[10px] uppercase font-mono tracking-tighter">{signatoryTitle}</p>}
+                      </div>
+                      <div>
+                        {signatoryName && <p className="font-bold text-zinc-950 underline underline-offset-4">{signatoryName.toUpperCase()}</p>}
+                        {signatoryNip && <p className="text-[10px] text-zinc-600 font-mono mt-0.5">NIP. {signatoryNip}</p>}
+                      </div>
                     </div>
                   </div>
-                </div>
+                )}
 
               </div>
 
@@ -2749,9 +3032,12 @@ export default function App() {
                                   emp.shiftPreference === 'shift' 
                                     ? 'bg-yellow-950/40 text-yellow-500 border border-yellow-800/25' 
                                     : 'bg-emerald-950/40 text-emerald-400 border border-emerald-800/20'
-                                }}`}>
+                                }`}>
                                   {emp.shiftPreference === 'shift' ? 'SHIFT 12J' : 'HARIAN'}
                                 </span>
+                                <div className="text-[10px] font-mono text-gold-accent font-extrabold mt-1 block uppercase">
+                                  {emp.regu || 'Harian'}
+                                </div>
                               </td>
                               <td className="py-2.5 px-3 text-center">
                                 <span className={`px-1.5 py-0.5 rounded text-[8px] font-mono tracking-tighter block whitespace-nowrap ${
@@ -2887,6 +3173,21 @@ export default function App() {
                     >
                       <option value="harian">Sistem Kantor Harian (Senin-Kamis/Jumat)</option>
                       <option value="shift">Sistem Patroli Bergilir (Shift Pagi/Malam)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-mono font-bold tracking-wider text-zinc-400 block uppercase pt-1 font-sans text-gold-accent">Penugasan Regu Patroli</label>
+                    <select
+                      value={empForm.regu || 'Harian'}
+                      onChange={(e) => setEmpForm({ ...empForm, regu: e.target.value as 'Regu 1' | 'Regu 2' | 'Regu 3' | 'Regu 4' | 'Harian' })}
+                      className="w-full bg-tactical-dark border border-zinc-700 focus:border-gold-accent rounded-lg p-2 text-xs font-semibold text-white focus:outline-none transition-all"
+                    >
+                      <option value="Harian">Bukan Regu / Dinas Kantor Harian</option>
+                      <option value="Regu 1">Regu Patroli I: REGU 1</option>
+                      <option value="Regu 2">Regu Patroli II: REGU 2</option>
+                      <option value="Regu 3">Regu Patroli III: REGU 3</option>
+                      <option value="Regu 4">Regu Patroli IV: REGU 4</option>
                     </select>
                   </div>
 

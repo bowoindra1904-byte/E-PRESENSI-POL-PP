@@ -9,21 +9,22 @@ export default function RunningText() {
   ];
 
   return (
-    <div className="w-full h-10 bg-amber-500 text-slate-900 border-t border-b border-amber-600 overflow-hidden text-xs font-sans flex items-center shadow-inner no-print shrink-0">
-      <div className="h-full bg-slate-900 text-amber-500 font-display font-extrabold px-6 uppercase tracking-wider flex items-center space-x-1.5 shrink-0 z-10">
-        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-        <span>PENGUMUMAN PENTING</span>
+    <div className="w-full h-8 md:h-10 bg-amber-500 text-slate-900 border-t border-b border-amber-600 overflow-hidden text-[11px] md:text-xs font-sans flex items-center shadow-inner no-print shrink-0">
+      <div className="h-full bg-slate-900 text-amber-500 font-display font-extrabold px-2 md:px-6 uppercase tracking-wider flex items-center space-x-1 md:space-x-1.5 shrink-0 z-10 text-[10px] md:text-xs">
+        <span className="w-1.5 h-1.5 md:w-2 md:h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+        <span className="hidden xs:inline">PENGUMUMAN PENTING</span>
+        <span className="xs:hidden">📢 INFO</span>
       </div>
       <div className="relative flex-1 overflow-hidden">
-        <div className="flex animate-[marquee_25s_linear_infinite] whitespace-nowrap space-x-12 hover:[animation-play-state:paused] cursor-pointer">
+        <div className="flex animate-[marquee_20s_linear_infinite] whitespace-nowrap space-x-8 md:space-x-12 hover:[animation-play-state:paused] cursor-pointer">
           {announcements.map((text, idx) => (
-            <span key={idx} className="font-semibold text-xs tracking-wide flex items-center">
+            <span key={idx} className="font-semibold text-[11px] md:text-xs tracking-wide flex items-center">
               {text} &nbsp;&nbsp;&bull;&nbsp;&nbsp;
             </span>
           ))}
           {/* Duplicate to create seamless infinite loop */}
           {announcements.map((text, idx) => (
-            <span key={`dup-${idx}`} className="font-semibold text-xs tracking-wide flex items-center">
+            <span key={`dup-${idx}`} className="font-semibold text-[11px] md:text-xs tracking-wide flex items-center">
               {text} &nbsp;&nbsp;&bull;&nbsp;&nbsp;
             </span>
           ))}
