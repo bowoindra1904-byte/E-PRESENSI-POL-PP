@@ -1,0 +1,6 @@
+{
+  "name": "E-Presensi Satpol PP",
+  "description": "Aplikasi absensi digital GPS terverifikasi dengan fitur anti-fake GPS, 10 lokasi dinamis, rekapitulasi KOP surat, dan VIP Card 3D untuk Satuan Polisi Pamong Praja Kabupaten Bangka Barat.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
