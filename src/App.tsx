@@ -517,7 +517,9 @@ export default function App() {
     e.preventDefault();
     setLoginError('');
 
-    if (!loginNip || !loginPassword) {
+    const cleanLoginNip = loginNip.replace(/\D/g, '').trim();
+
+    if (!cleanLoginNip || !loginPassword) {
       setLoginError('NIP dan Kata Sandi wajib diisi.');
       return;
     }
@@ -526,14 +528,18 @@ export default function App() {
     if (loginPassword !== 'Polpp01') {
       setLoginError('Kata Sandi salah. Hubungi administrator.');
       // Log failure
-      addSecurityLog(loginNip, 'INVALID_PASSWORD_ATTEMPT', 'WARNING', `Percobaan login gagal dengan NIP: ${loginNip}`);
+      addSecurityLog(cleanLoginNip, 'INVALID_PASSWORD_ATTEMPT', 'WARNING', `Percobaan login gagal dengan NIP: ${cleanLoginNip}`);
       return;
     }
 
-    const matched = employees.find(emp => emp.nip === loginNip);
+    const matched = employees.find(emp => {
+      const cleanEmpNip = emp.nip.replace(/\D/g, '').trim();
+      return cleanEmpNip === cleanLoginNip;
+    });
+
     if (!matched) {
       setLoginError('NIP pegawai tidak terdaftar pada Mako BB.');
-      addSecurityLog(loginNip, 'NON_EXISTENT_NIP_LOGIN', 'BREACH_DEFENDED', `Mencoba login dengan NIP tidak terdaftar: ${loginNip}`);
+      addSecurityLog(cleanLoginNip, 'NON_EXISTENT_NIP_LOGIN', 'BREACH_DEFENDED', `Mencoba login dengan NIP tidak terdaftar: ${cleanLoginNip}`);
       return;
     }
 
@@ -546,7 +552,11 @@ export default function App() {
       const virtualUuid = generateUUID();
       finalEmployee.deviceId = virtualUuid;
       // Persist in local lists
-      setEmployees(prev => prev.map(e => e.nip === matched.nip ? { ...e, deviceId: virtualUuid } : e));
+      setEmployees(prev => prev.map(e => {
+        const cleanE = e.nip.replace(/\D/g, '').trim();
+        const cleanMatched = matched.nip.replace(/\D/g, '').trim();
+        return cleanE === cleanMatched ? { ...e, deviceId: virtualUuid } : e;
+      }));
       isNewDevice = true;
     }
 
@@ -776,7 +786,8 @@ export default function App() {
   // --- CRUD Pegawai Form ---
   const handleSaveEmployee = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!empForm.nip || !empForm.nama || !empForm.jabatan) {
+    const cleanNip = empForm.nip.replace(/\D/g, '').trim();
+    if (!cleanNip || !empForm.nama || !empForm.jabatan) {
       alert('Mohon lengkapi NIP, Nama, dan Jabatan Pegawai!');
       return;
     }
@@ -785,7 +796,7 @@ export default function App() {
       // Edit mode
       setEmployees(prev => prev.map(e => e.id === isEditingEmployee.id ? { 
         ...e, 
-        nip: empForm.nip, 
+        nip: cleanNip, 
         nama: empForm.nama, 
         jabatan: empForm.jabatan, 
         pangkat: empForm.pangkat,
@@ -793,11 +804,11 @@ export default function App() {
         assignedSlotId: empForm.assignedSlotId
       } : e));
       
-      addSecurityLog('ADMIN', 'EMPLOYEE_UPDATE', 'SECURE', `Mengubah profil pegawai NIP: ${empForm.nip}`);
+      addSecurityLog('ADMIN', 'EMPLOYEE_UPDATE', 'SECURE', `Mengubah profil pegawai NIP: ${cleanNip}`);
       setIsEditingEmployee(null);
     } else {
       // Create mode
-      const isDuplicate = employees.some(e => e.nip === empForm.nip);
+      const isDuplicate = employees.some(e => e.nip.replace(/\D/g, '').trim() === cleanNip);
       if (isDuplicate) {
         alert('NIP Pegawai tersebut sudah terdaftar!');
         return;
@@ -805,7 +816,7 @@ export default function App() {
 
       const newEmp: Employee = {
         id: 'emp-' + Math.random().toString(36).substring(3, 11).toUpperCase(),
-        nip: empForm.nip,
+        nip: cleanNip,
         nama: empForm.nama,
         jabatan: empForm.jabatan,
         pangkat: empForm.pangkat || 'Pengatur Muda (II/a)',
@@ -817,7 +828,7 @@ export default function App() {
       };
 
       setEmployees(prev => [newEmp, ...prev]);
-      addSecurityLog('ADMIN', 'EMPLOYEE_CREATE', 'SECURE', `Menambahkan anggota baru NIP: ${empForm.nip}`);
+      addSecurityLog('ADMIN', 'EMPLOYEE_CREATE', 'SECURE', `Menambahkan anggota baru NIP: ${cleanNip}`);
     }
 
     setEmpForm({ nip: '', nama: '', jabatan: '', pangkat: '', shiftPreference: 'harian', assignedSlotId: 'ALL' });
